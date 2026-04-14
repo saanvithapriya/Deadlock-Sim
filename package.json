@@ -1,0 +1,10 @@
+{
+  "name": "deadlock-simulator",
+  "version": "1.0.0",
+  "description": "Deadlock Detection and Recovery Simulator",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx -y serve . -p 3000"
+  },
+  "type": "module"
+}

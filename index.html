@@ -1,0 +1,1532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deadlock Simulator | OS-CBP</title>
+  <meta name="description" content="Interactive Deadlock Detection & Recovery Simulator — visualize DFS cycle detection and Banker's Algorithm with step-by-step animations.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230f172a' stroke='%234fd1c5' stroke-width='2'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-size='13' font-family='monospace' fill='%234fd1c5'%3EDL%3C/text%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --glass-bg: rgba(30, 41, 59, 0.7);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --accent-cyan: #4fd1c5;
+      --accent-purple: #805ad5;
+      --accent-amber: #f6ad55;
+      --accent-red: #f56565;
+      --accent-green: #48bb78;
+      --text-main: #f8fafc;
+      --text-dim: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body {
+      background: radial-gradient(circle at 50% 50%, #1e293b 0%, #0f172a 100%);
+      color: var(--text-main);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      user-select: none;
+    }
+
+    #sidebar {
+      width: 320px;
+      min-width: 250px;
+      max-width: 600px;
+      height: 100vh;
+      background: var(--glass-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-right: 1px solid var(--glass-border);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+      z-index: 10;
+      flex-shrink: 0;
+      scroll-behavior: smooth;
+    }
+
+    /* Sticky footer for history/controls/presets so they don't jitter */
+    #sidebar-footer {
+      margin-top: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    #sidebar::-webkit-scrollbar {
+      width: 4px;
+    }
+    #sidebar::-webkit-scrollbar-thumb {
+      background: var(--glass-border);
+      border-radius: 10px;
+    }
+
+    #resizer {
+      width: 8px;
+      cursor: col-resize;
+      background: transparent;
+      transition: background 0.2s;
+      z-index: 20;
+      flex-shrink: 0;
+      margin-left: -4px;
+    }
+    #resizer:hover, #resizer.resizing {
+      background: var(--accent-cyan);
+      box-shadow: 0 0 15px var(--accent-cyan);
+    }
+
+    #canvas-container {
+      flex: 1;
+      position: relative;
+      background: 
+        radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0);
+      background-size: 40px 40px;
+      min-width: 0;
+    }
+
+    #main-content {
+      flex: 1;
+      width: 100%;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-y: auto;
+      scroll-behavior: smooth;
+      padding: 40px 20px;
+      /* Centering is handled by children margin:auto */
+    }
+
+    #main-content::-webkit-scrollbar {
+      width: 6px;
+    }
+    #main-content::-webkit-scrollbar-thumb {
+      background: var(--glass-border);
+      border-radius: 10px;
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      margin-bottom: 4px;
+      background: linear-gradient(to right, #4fd1c5, #805ad5);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-bottom: 20px;
+    }
+
+    .control-section {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+
+    .section-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .button-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .input-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    input[type="number"] {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--glass-border);
+      color: var(--text-main);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      width: 60px;
+      outline: none;
+    }
+    input[type="number"]:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    button {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--glass-border);
+      color: var(--text-main);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    button:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.1);
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    #event-log {
+      flex: 1;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.7rem;
+      overflow-y: auto;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid var(--glass-border);
+      min-height: 150px;
+    }
+
+    .log-item {
+      margin-bottom: 6px;
+      line-height: 1.4;
+      display: flex;
+      gap: 8px;
+    }
+
+    .log-time {
+      color: var(--accent-cyan);
+      flex-shrink: 0;
+    }
+
+    #status-badge {
+      position: absolute;
+      bottom: 24px;
+      right: 24px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--glass-border);
+      padding: 8px 16px;
+      border-radius: 100px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.8rem;
+      z-index: 30;
+      transition: all 0.5s ease;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #4fd1c5;
+      box-shadow: 0 0 8px #4fd1c5;
+      transition: all 0.5s ease;
+    }
+
+    #graph-stats {
+      position: absolute;
+      bottom: 24px;
+      left: 24px;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      background: var(--glass-bg);
+      padding: 8px 16px;
+      border-radius: 100px;
+      border: 1px solid var(--glass-border);
+      z-index: 30;
+    }
+
+    /* ─── Explanation Panel ─── */
+    #explanation-panel {
+      margin-top: 12px;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.68rem;
+      max-height: 180px;
+      overflow-y: auto;
+      line-height: 1.6;
+      transition: all 0.3s ease;
+    }
+    #explanation-panel::-webkit-scrollbar { width: 3px; }
+    #explanation-panel::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 10px; }
+
+    .explanation-step {
+      padding: 4px 8px;
+      border-left: 2px solid var(--glass-border);
+      margin-bottom: 4px;
+      opacity: 0;
+      transform: translateX(-8px);
+      animation: stepFadeIn 0.35s ease forwards;
+    }
+    .explanation-step.active {
+      border-left-color: var(--accent-amber);
+      background: rgba(246, 173, 85, 0.08);
+    }
+    .explanation-step.safe {
+      border-left-color: var(--accent-green);
+      background: rgba(72, 187, 120, 0.08);
+    }
+    .explanation-step.error {
+      border-left-color: var(--accent-red);
+      background: rgba(245, 101, 101, 0.08);
+    }
+    .explanation-step .step-num {
+      color: var(--accent-cyan);
+      font-weight: 600;
+      margin-right: 6px;
+    }
+    @keyframes stepFadeIn {
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    /* ─── Theory Popover ─── */
+    .info-icon {
+      cursor: pointer;
+      font-size: 0.85rem;
+      opacity: 0.6;
+      transition: opacity 0.2s, transform 0.2s;
+      position: relative;
+    }
+    .info-icon:hover {
+      opacity: 1;
+      transform: scale(1.15);
+    }
+    #theory-popover {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      width: 280px;
+      background: rgba(15, 23, 42, 0.97);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      line-height: 1.6;
+      z-index: 100;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      animation: popoverIn 0.25s ease;
+    }
+    #theory-popover.visible {
+      display: block;
+    }
+    @keyframes popoverIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    #theory-popover h4 {
+      color: var(--accent-cyan);
+      font-size: 0.75rem;
+      margin-bottom: 6px;
+    }
+    #theory-popover ul {
+      margin: 4px 0 10px 14px;
+    }
+    #theory-popover li {
+      margin-bottom: 2px;
+    }
+    .theory-close {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      opacity: 0.5;
+    }
+    .theory-close:hover { opacity: 1; }
+
+    /* ─── Edge Legend ─── */
+    #edge-legend {
+      position: absolute;
+      bottom: 64px;
+      left: 24px;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      background: var(--glass-bg);
+      backdrop-filter: blur(8px);
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--glass-border);
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-line {
+      width: 24px;
+      height: 2px;
+      border-radius: 1px;
+    }
+    .legend-line.solid { background: var(--accent-cyan); }
+    .legend-line.dashed {
+      background: repeating-linear-gradient(
+        90deg,
+        var(--accent-amber) 0px,
+        var(--accent-amber) 4px,
+        transparent 4px,
+        transparent 7px
+      );
+    }
+
+    /* ─── Speed Control ─── */
+    .speed-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .speed-row label {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+    .speed-row input[type="range"] {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.1);
+      outline: none;
+    }
+    .speed-row input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent-cyan);
+      cursor: pointer;
+      box-shadow: 0 0 6px var(--accent-cyan);
+    }
+    .speed-label {
+      font-size: 0.65rem;
+      color: var(--accent-cyan);
+      min-width: 28px;
+      text-align: right;
+    }
+
+    /* ─── Onboarding Overlay ─── */
+    #onboarding-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.4s ease;
+    }
+    #onboarding-overlay.hidden { display: none; }
+    @keyframes fadeIn {
+      from { opacity: 0; } to { opacity: 1; }
+    }
+    .onboarding-card {
+      background: rgba(30, 41, 59, 0.95);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 32px 36px;
+      max-width: 420px;
+      text-align: center;
+      box-shadow: 0 16px 64px rgba(0,0,0,0.5);
+      animation: cardBounce 0.5s ease;
+    }
+    @keyframes cardBounce {
+      from { opacity: 0; transform: scale(0.9) translateY(20px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .onboarding-card h2 {
+      font-size: 1.2rem;
+      margin-bottom: 12px;
+      background: linear-gradient(to right, #4fd1c5, #805ad5);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .onboarding-card p {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      line-height: 1.7;
+      margin-bottom: 20px;
+    }
+    .onboarding-steps {
+      text-align: left;
+      margin: 16px 0;
+    }
+    .onboarding-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 10px;
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+    .onboarding-step .step-badge {
+      background: rgba(79, 209, 197, 0.15);
+      color: var(--accent-cyan);
+      font-weight: 700;
+      font-size: 0.65rem;
+      border-radius: 50%;
+      width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .onboarding-dismiss {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)) !important;
+      border: none !important;
+      padding: 10px 28px !important;
+      border-radius: 100px !important;
+      font-weight: 600 !important;
+      cursor: pointer;
+      display: inline-flex;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .onboarding-dismiss:hover {
+      transform: translateY(-2px) !important;
+      box-shadow: 0 4px 20px rgba(79, 209, 197, 0.3);
+    }
+
+    /* ─── Preset Labels ─── */
+    .preset-label {
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      text-align: center;
+      margin-top: 2px;
+      opacity: 0.7;
+      font-style: italic;
+    }
+
+    /* ─── Phase Badge Animations ─── */
+    @keyframes phasePulse {
+      0%   { box-shadow: 0 0 0 0 rgba(79, 209, 197, 0.4); }
+      70%  { box-shadow: 0 0 0 8px rgba(79, 209, 197, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(79, 209, 197, 0); }
+    }
+    .phase-analyzing .status-dot {
+      background: var(--accent-amber) !important;
+      box-shadow: 0 0 8px var(--accent-amber) !important;
+      animation: phasePulse 1.2s ease-in-out infinite;
+    }
+    .phase-safe .status-dot {
+      background: var(--accent-green) !important;
+      box-shadow: 0 0 12px var(--accent-green) !important;
+    }
+    .phase-deadlocked .status-dot {
+      background: var(--accent-red) !important;
+      box-shadow: 0 0 12px var(--accent-red) !important;
+    }
+
+    /* ─── Banker Matrix Display ─── */
+    #banker-matrix {
+      display: none;
+      margin-top: 10px;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 10px;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.62rem;
+      overflow-x: auto;
+    }
+    #banker-matrix table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    #banker-matrix th, #banker-matrix td {
+      padding: 3px 6px;
+      text-align: center;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    #banker-matrix th {
+      color: var(--accent-cyan);
+      font-weight: 600;
+      font-size: 0.6rem;
+    }
+    #banker-matrix td {
+      color: var(--text-dim);
+    }
+    #banker-matrix .matrix-label {
+      color: var(--accent-amber);
+      font-weight: 600;
+      margin-bottom: 4px;
+      font-size: 0.65rem;
+    }
+
+    /* ─── WFG Toggle Button ─── */
+    #wfg-toggle {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 35;
+      background: var(--glass-bg);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--glass-border);
+      color: var(--text-main);
+      padding: 8px 16px;
+      border-radius: 100px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #wfg-toggle:hover {
+      background: rgba(79, 209, 197, 0.15);
+      border-color: var(--accent-cyan);
+      transform: translateY(-1px);
+    }
+    #wfg-toggle.active {
+      background: rgba(79, 209, 197, 0.2);
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 12px rgba(79, 209, 197, 0.3);
+    }
+    #wfg-toggle .toggle-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--text-dim);
+      transition: background 0.3s;
+    }
+    #wfg-toggle.active .toggle-dot {
+      background: var(--accent-cyan);
+      box-shadow: 0 0 6px var(--accent-cyan);
+    }
+
+    /* ─── WFG Modal Overlay ─── */
+    #wfg-modal {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 32;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(8px);
+      padding: 60px 40px 40px;
+    }
+    #wfg-modal.visible { display: flex; flex-direction: column; }
+    #wfg-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    #wfg-modal-header h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      background: linear-gradient(to right, #4fd1c5, #805ad5);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    #wfg-modal-header .wfg-subtitle {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+    }
+    #wfg-close {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--glass-border);
+      color: var(--text-main);
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: all 0.2s;
+    }
+    #wfg-close:hover { background: rgba(255,255,255,0.1); }
+    #wfg-canvas {
+      flex: 1;
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      overflow: hidden;
+      background: rgba(0,0,0,0.2);
+      position: relative;
+    }
+    /* WFG in-canvas floating legend */
+    #wfg-canvas-legend {
+      position: absolute;
+      bottom: 12px;
+      left: 14px;
+      display: flex;
+      gap: 14px;
+      font-size: 0.62rem;
+      color: var(--text-dim);
+      background: rgba(15,23,42,0.78);
+      backdrop-filter: blur(8px);
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--glass-border);
+      pointer-events: none;
+      z-index: 5;
+    }
+    .wfg-legend-item { display: flex; align-items: center; gap: 6px; }
+    .wfg-legend-dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid; flex-shrink: 0; }
+    .wfg-legend-line { width: 20px; height: 2px; border-radius: 1px; flex-shrink: 0; }
+    /* WFG node tooltip */
+    #wfg-node-tooltip {
+      position: fixed;
+      pointer-events: none;
+      background: rgba(15,23,42,0.96);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 7px 11px;
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      z-index: 9999;
+      display: none;
+      line-height: 1.55;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.6);
+      min-width: 130px;
+    }
+    #wfg-node-tooltip .tooltip-title { color: var(--text-main); font-weight: 700; font-size: 0.7rem; margin-bottom: 4px; }
+    #wfg-node-tooltip .tooltip-row { display: flex; justify-content: space-between; gap: 10px; }
+    #wfg-node-tooltip .tooltip-val { color: var(--accent-cyan); font-weight: 600; }
+    /* Animated cycle edges */
+    @keyframes wfgCycleDash { to { stroke-dashoffset: -20; } }
+    @keyframes wfgCycleGlow {
+      0%   { stroke-opacity: 0.6; filter: drop-shadow(0 0 3px #f56565); }
+      50%  { stroke-opacity: 1;   filter: drop-shadow(0 0 12px #f56565); }
+      100% { stroke-opacity: 0.6; filter: drop-shadow(0 0 3px #f56565); }
+    }
+    .wfg-cycle-edge {
+      stroke: #f56565 !important;
+      stroke-width: 2.5px;
+      stroke-dasharray: 6,4;
+      animation: wfgCycleDash 0.8s linear infinite, wfgCycleGlow 1.6s ease-in-out infinite;
+    }
+    /* WFG info row */
+    #wfg-info {
+      margin-top: 12px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .wfg-info-card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      flex: 1;
+      min-width: 130px;
+    }
+    .wfg-info-card strong {
+      color: var(--accent-cyan);
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .wfg-info-card .value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+    .wfg-info-card.deadlocked {
+      border-color: rgba(245, 101, 101, 0.3);
+      background: rgba(245, 101, 101, 0.05);
+    }
+    .wfg-info-card.safe {
+      border-color: rgba(72, 187, 120, 0.3);
+      background: rgba(72, 187, 120, 0.05);
+    }
+    /* WFG dependency chain badge pills */
+    .wfg-dep-item {
+      padding: 2px 6px; border-radius: 4px; display: inline-block; margin: 1px 2px;
+      font-family: 'Fira Code', monospace; font-size: 0.63rem;
+    }
+    .wfg-dep-item.cycle-edge { background: rgba(245,101,101,0.12); color: #f56565; }
+    .wfg-dep-item.normal-edge { background: rgba(100,116,139,0.12); color: #94a3b8; }
+
+    /* ─── WFG Edge Labels ─── */
+    .wfg-edge-label {
+      font-size: 0.52rem;
+      fill: #94a3b8;
+      pointer-events: none;
+      font-family: 'Fira Code', monospace;
+      text-anchor: middle;
+    }
+    .wfg-edge-label.cycle {
+      fill: #f56565;
+      font-weight: 600;
+    }
+
+    /* ─── WFG Dependency Explanation ─── */
+    .wfg-dep-explanation {
+      background: rgba(0,0,0,0.25);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 0.63rem;
+      font-family: 'Fira Code', monospace;
+      line-height: 1.65;
+      max-height: 160px;
+      overflow-y: auto;
+      flex: 2;
+      min-width: 200px;
+    }
+    .wfg-dep-explanation::-webkit-scrollbar { width: 3px; }
+    .wfg-dep-explanation::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 10px; }
+    .wfg-dep-explanation .dep-line {
+      padding: 3px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .wfg-dep-explanation .dep-line:last-child { border-bottom: none; }
+    .wfg-dep-explanation .dep-arrow { color: var(--accent-cyan); font-weight: 700; }
+    .wfg-dep-explanation .dep-arrow.cycle { color: #f56565; }
+    .wfg-dep-explanation .dep-reason { color: var(--text-dim); font-style: italic; font-size: 0.58rem; }
+
+    /* ─── Victim Analysis Card ─── */
+    .victim-analysis-card {
+      background: rgba(245, 101, 101, 0.04);
+      border: 1px solid rgba(245, 101, 101, 0.2);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 10px;
+      animation: stepFadeIn 0.4s ease forwards;
+    }
+    .victim-analysis-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .victim-analysis-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .victim-analysis-title .victim-name {
+      color: #f56565;
+      background: rgba(245,101,101,0.12);
+      padding: 2px 8px;
+      border-radius: 100px;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.68rem;
+    }
+    .victim-process-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 4px;
+    }
+    .victim-process-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.62rem;
+      padding: 5px 8px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid transparent;
+      transition: all 0.2s;
+    }
+    .victim-process-row.is-victim {
+      background: rgba(245,101,101,0.08);
+      border-color: rgba(245,101,101,0.25);
+    }
+    .victim-process-row .vp-name {
+      font-weight: 700;
+      color: var(--text-main);
+      min-width: 30px;
+      font-family: 'Fira Code', monospace;
+    }
+    .victim-process-row.is-victim .vp-name { color: #f56565; }
+    .victim-process-row .vp-stat {
+      color: var(--text-dim);
+      flex: 1;
+    }
+    .victim-process-row .vp-badge {
+      font-size: 0.52rem;
+      padding: 1px 6px;
+      border-radius: 100px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .vp-badge.selected {
+      background: rgba(245,101,101,0.15);
+      color: #f56565;
+    }
+    #wfg-toggle.pulse-notif {
+      animation: badgePulse 2s infinite;
+      border-color: rgba(245,101,101,0.5) !important;
+      background: rgba(245,101,101,0.05);
+    }
+    .victim-rationale {
+      margin-top: 8px;
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      border-top: 1px solid rgba(255,255,255,0.06);
+      padding-top: 8px;
+      line-height: 1.5;
+    }
+    .victim-rationale strong { color: var(--accent-cyan); }
+
+    /* ─── WFG Toggle Notification Badge ─── */
+    #wfg-toggle .notif-badge {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f56565;
+      box-shadow: 0 0 8px #f56565;
+      animation: phasePulse 1.2s ease-in-out infinite;
+      display: none;
+    }
+    #wfg-toggle .notif-badge.visible {
+      display: inline-block;
+    }
+    #wfg-edges-list { font-family: 'Fira Code', monospace; font-size: 0.68rem; line-height: 1.5; }
+
+    /* ─── Recovery Comparison Panel ─── */
+    #recovery-comparison {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+    .recovery-card {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--glass-border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      position: relative;
+    }
+    .recovery-card:hover {
+      border-color: rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.04);
+      transform: translateX(2px);
+    }
+    .recovery-card.selected {
+      border-color: var(--accent-cyan);
+      background: rgba(79, 209, 197, 0.06);
+      box-shadow: 0 0 14px rgba(79,209,197,0.15);
+    }
+    .recovery-card.best-pick {
+      border-color: rgba(72, 187, 120, 0.5);
+    }
+    .recovery-card.best-pick::before {
+      content: '★ Recommended';
+      position: absolute;
+      top: -9px;
+      right: 10px;
+      background: rgba(72,187,120,0.2);
+      color: #48bb78;
+      font-size: 0.5rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 100px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      border: 1px solid rgba(72,187,120,0.3);
+    }
+    .recovery-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .recovery-card-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .recovery-card-badge {
+      font-size: 0.55rem;
+      padding: 2px 8px;
+      border-radius: 100px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge-low { background: rgba(72, 187, 120, 0.15); color: #48bb78; }
+    .badge-medium { background: rgba(246, 173, 85, 0.15); color: #f6ad55; }
+    .badge-high { background: rgba(245, 101, 101, 0.15); color: #f56565; }
+    /* ─ Metric bars ─ */
+    .recovery-metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+    .recovery-metric-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.6rem;
+    }
+    .recovery-metric-label {
+      color: var(--text-dim);
+      width: 88px;
+      flex-shrink: 0;
+    }
+    .recovery-metric-bar-wrap {
+      flex: 1;
+      height: 5px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .recovery-metric-bar {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.6s cubic-bezier(0.4,0,0.2,1);
+      width: 0;
+    }
+    .bar-green  { background: linear-gradient(90deg, #48bb78, #38a169); }
+    .bar-amber  { background: linear-gradient(90deg, #f6ad55, #ed8936); }
+    .bar-red    { background: linear-gradient(90deg, #f56565, #e53e3e); }
+    .recovery-metric-val {
+      color: var(--text-main);
+      font-weight: 700;
+      font-size: 0.62rem;
+      min-width: 22px;
+      text-align: right;
+    }
+    .recovery-card-desc {
+      font-size: 0.61rem;
+      color: var(--text-dim);
+      line-height: 1.45;
+      border-top: 1px solid rgba(255,255,255,0.05);
+      padding-top: 6px;
+      margin-top: 2px;
+    }
+    .recovery-apply-btn {
+      margin-top: 6px;
+      width: 100%;
+      padding: 5px 10px !important;
+      font-size: 0.65rem !important;
+      border-color: var(--accent-cyan) !important;
+      border-radius: 6px !important;
+      background: rgba(79,209,197,0.08) !important;
+      opacity: 0;
+      max-height: 0;
+      overflow: hidden;
+      transition: all 0.25s ease;
+    }
+    .recovery-card.selected .recovery-apply-btn {
+      opacity: 1;
+      max-height: 40px;
+      margin-top: 8px;
+    }
+    /* ─ Comparison summary table ─ */
+    #recovery-summary-table {
+      margin-top: 10px;
+      margin-left: -16px;         /* break out of control-section padding */
+      margin-right: -16px;
+      border-left: none;
+      border-right: none;
+      border-top: 1px solid var(--glass-border);
+      border-bottom: 1px solid var(--glass-border);
+      border-radius: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      font-size: 0.6rem;
+    }
+    #recovery-summary-table::-webkit-scrollbar { height: 3px; }
+    #recovery-summary-table::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 10px; }
+    #recovery-summary-table table {
+      width: 100%;
+      min-width: 240px;
+      border-collapse: collapse;
+      table-layout: auto;
+    }
+    #recovery-summary-table th {
+      background: rgba(255,255,255,0.04);
+      color: var(--accent-cyan);
+      font-weight: 600;
+      padding: 5px 6px;
+      text-align: center;
+      font-size: 0.56rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      border-bottom: 1px solid var(--glass-border);
+      white-space: nowrap;
+    }
+    #recovery-summary-table th:first-child { text-align: left; padding-left: 8px; }
+    #recovery-summary-table td {
+      padding: 4px 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      color: var(--text-dim);
+      text-align: center;
+      white-space: nowrap;
+    }
+    #recovery-summary-table td:first-child { text-align: left; padding-left: 8px; }
+    #recovery-summary-table tr:last-child td { border-bottom: none; }
+    #recovery-summary-table .td-strategy { color: var(--text-main); font-weight: 600; }
+    #recovery-summary-table .td-best { color: #48bb78; font-weight: 700; }
+
+    @media (max-width: 768px) {
+      body { flex-direction: column-reverse; }
+      #sidebar { width: 100%; height: 350px; max-width: none; border-right: none; border-top: 1px solid var(--glass-border); }
+      #resizer { display: none; }
+      #canvas-container { height: calc(100vh - 350px); }
+      #main-content { height: 100vh; }
+    }
+
+    /* Homepage Premium Styles */
+    .home-section {
+      margin: auto 0;
+      padding: 40px 0;
+      width: 100%;
+      max-width: 1100px;
+      animation: fadeIn 0.8s ease-out;
+      display: flex;
+      flex-direction: column;
+      gap: 40px;
+    }
+
+    .topic-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 24px;
+      margin-top: 40px;
+      justify-items: center;
+    }
+
+    .topic-card {
+      background: rgba(30, 41, 59, 0.4);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
+      padding: 30px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .topic-card:hover {
+      transform: translateY(-8px);
+      background: rgba(30, 41, 59, 0.6);
+      border-color: var(--accent-cyan);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 20px rgba(79, 209, 197, 0.1);
+    }
+
+    .topic-card h2 {
+      font-size: 1.25rem;
+      color: var(--accent-cyan);
+      margin-bottom: 12px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .topic-card p, .topic-card div {
+      color: var(--text-dim);
+      line-height: 1.6;
+      font-size: 0.95rem;
+    }
+
+    .topic-card ul {
+      text-align: left;
+      margin-top: 10px;
+      list-style-type: none;
+    }
+
+    .topic-card li {
+      margin-bottom: 6px;
+      position: relative;
+      padding-left: 18px;
+    }
+
+    .topic-card li::before {
+      content: '▹';
+      position: absolute;
+      left: 0;
+      color: var(--accent-cyan);
+    }
+
+    .start-btn {
+      padding: 16px 48px;
+      font-size: 1.1rem;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      color: white;
+      border: none;
+      border-radius: 100px;
+      cursor: pointer;
+      font-weight: 700;
+      box-shadow: 0 10px 25px rgba(79, 209, 197, 0.3);
+      transition: all 0.3s ease;
+      margin-top: 20px;
+    }
+
+    .start-btn:hover {
+      transform: translateY(-3px) scale(1.02);
+      box-shadow: 0 15px 35px rgba(79, 209, 197, 0.4);
+    }
+  </style>
+</head>
+<body>
+  <div id="sidebar" style="display:none;">
+    <button onclick="location.hash = '#/'" style="background:rgba(255,255,255,0.05); border:1px solid var(--glass-border); border-radius:8px; padding:6px 12px; font-size:0.7rem; color:var(--text-dim); transition:all 0.2s; margin-bottom:16px; width:fit-content; cursor:pointer;" onmouseover="this.style.color='var(--accent-cyan)'; this.style.borderColor='var(--accent-cyan)'" onmouseout="this.style.color='var(--text-dim)'; this.style.borderColor='var(--glass-border)'">
+      ← Back to Home
+    </button>
+    <h1>DeadLock Sim</h1>
+    <div class="subtitle">Multi-Instance RAG Visualizer</div>
+    
+    <div class="control-section">
+      <div class="section-title">Add Elements</div>
+      <div class="button-group">
+        <button id="add-process" title="Add process">Process</button>
+        <button id="add-resource" title="Add resource">Resource</button>
+      </div>
+      <div class="input-row">
+        <span style="font-size: 0.7rem; color: var(--text-dim);">Instances:</span>
+        <input type="number" id="res-instances" value="1" min="1" max="10">
+      </div>
+      <button id="add-edge" style="width: 100%; margin-top: 8px;" title="Link nodes">Add Link / Edge</button>
+    </div>
+
+    <div class="control-section" style="position: relative;">
+      <div class="section-title">
+        Detection <span id="algo-mode" style="font-size: 0.65rem; color: var(--accent-amber);">DFS</span>
+        <span class="info-icon" id="theory-toggle" title="Learn about deadlock detection">ℹ️</span>
+      </div>
+      <div id="theory-popover">
+        <span class="theory-close" id="theory-close">✕</span>
+        <h4>What is Deadlock?</h4>
+        <p>A deadlock occurs when a set of processes are each waiting for a resource held by another process in the set, creating a circular wait.</p>
+        <h4>4 Necessary Conditions</h4>
+        <ul>
+          <li><strong>Mutual Exclusion</strong> — Only one process can use a resource at a time</li>
+          <li><strong>Hold & Wait</strong> — A process holds resources while waiting for others</li>
+          <li><strong>No Preemption</strong> — Resources can't be forcibly taken</li>
+          <li><strong>Circular Wait</strong> — A cycle exists in the wait-for graph</li>
+        </ul>
+        <h4>DFS Cycle Detection</h4>
+        <p>Uses Depth-First Search on the RAG. If a back edge is found (visiting a node already in the recursion stack), a cycle exists → deadlock.</p>
+        <h4>Banker's Algorithm</h4>
+        <p>For multi-instance resources: simulates resource allocation to find a safe sequence. If no safe sequence exists, the system is unsafe.</p>
+      </div>
+      <div class="button-group">
+        <button id="run-detection" style="border-color: var(--accent-cyan);">Run Detection</button>
+        <button id="step-detection" title="First click initialises; subsequent clicks advance one step at a time">Step-Through</button>
+      </div>
+      <div class="button-group" style="margin-top: 8px;">
+        <button id="auto-play-btn">▶ Auto-Play</button>
+        <button id="stop-play-btn" disabled>⏹ Stop</button>
+      </div>
+      <div class="speed-row">
+        <label>Speed:</label>
+        <input type="range" id="speed-slider" min="1" max="6" value="3" step="1">
+        <span class="speed-label" id="speed-value">1x</span>
+      </div>
+      <div id="explanation-panel">
+        <div style="color: var(--text-dim); font-style: italic;">Run detection or step-through to see live explanations...</div>
+      </div>
+      <div id="banker-matrix"></div>
+    </div>
+
+    <div class="control-section" id="recovery-section" style="display: none;">
+      <div class="section-title">
+        Recovery Strategy Comparison
+        <span style="font-size:0.6rem;color:var(--text-dim);font-weight:400;">click to select</span>
+      </div>
+      <div id="recovery-comparison"></div>
+      <div id="recovery-summary-table"></div>
+    </div>
+
+    <div id="sidebar-footer">
+    <div class="control-section">
+      <div class="section-title">History</div>
+      <div class="button-group">
+        <button id="rollback-btn" style="border-color: var(--accent-amber);" disabled>Rollback</button>
+        <button id="redo-btn" style="border-color: var(--accent-cyan);" disabled>Redo</button>
+      </div>
+      <div id="checkpoint-status" style="margin-top: 8px; font-size: 0.65rem; color: var(--text-dim);">No history items</div>
+    </div>
+
+    <div class="control-section">
+      <div class="section-title">Presets</div>
+      <div class="button-group">
+        <div>
+          <button id="preset-dfs-safe" style="width:100%">DFS Safe</button>
+          <div class="preset-label">Safe Scenario</div>
+        </div>
+        <div>
+          <button id="preset-dfs-dead" style="width:100%">DFS Dead</button>
+          <div class="preset-label">Deadlock Scenario</div>
+        </div>
+        <div>
+          <button id="preset-bank-safe" style="width:100%">Bank Safe</button>
+          <div class="preset-label">Safe Scenario</div>
+        </div>
+        <div>
+          <button id="preset-bank-dead" style="width:100%">Bank Dead</button>
+          <div class="preset-label">Deadlock Scenario</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="control-section">
+      <div class="section-title">Controls</div>
+      <button id="reset-btn" style="width: 100%;">Clear Canvas</button>
+    </div>
+    </div><!-- /#sidebar-footer -->
+
+    <div id="event-log"></div>
+  </div>
+
+  <div id="resizer" style="display:none;"></div>
+
+  <main id="main-content"></main>
+
+  <div id="canvas-container" style="display:none;">
+    <button id="wfg-toggle" title="Toggle Wait-For Graph view">
+      <span class="toggle-dot"></span>
+      Wait-For Graph
+      <span class="notif-badge" id="wfg-notif-badge"></span>
+    </button>
+    <div id="wfg-modal">
+      <div id="wfg-modal-header">
+        <div>
+          <h3>Wait-For Graph (WFG)</h3>
+          <div class="wfg-subtitle">Simplified view — shows only process-to-process dependencies</div>
+        </div>
+        <button id="wfg-close">✕</button>
+      </div>
+      <div id="wfg-canvas">
+        <div id="wfg-canvas-legend">
+          <div class="wfg-legend-item">
+            <div class="wfg-legend-dot" style="border-color:#4fd1c5;"></div>
+            <span>Safe process</span>
+          </div>
+          <div class="wfg-legend-item">
+            <div class="wfg-legend-dot" style="border-color:#f56565;"></div>
+            <span>In deadlock cycle</span>
+          </div>
+          <div class="wfg-legend-item">
+            <div class="wfg-legend-line" style="background:#f56565;"></div>
+            <span>Cycle edge</span>
+          </div>
+          <div class="wfg-legend-item">
+            <div class="wfg-legend-line" style="background:#64748b;height:1px;border-top:1px dashed #64748b;"></div>
+            <span>Wait edge</span>
+          </div>
+        </div>
+      </div>
+      <div id="wfg-info"></div>
+    </div>
+  </div>
+
+  <div id="edge-legend" style="display:none;">
+    <div class="legend-item">
+      <div class="legend-line solid"></div>
+      <span>Allocation</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-line dashed"></div>
+      <span>Request</span>
+    </div>
+  </div>
+
+  <div id="graph-stats" style="display:none;">Nodes: 0 | Edges: 0</div>
+  <div id="status-badge" style="display:none;">
+    <div class="status-dot"></div>
+    <span id="system-status">Phase: BUILD</span>
+  </div>
+
+  <!-- WFG Node Tooltip -->
+  <div id="wfg-node-tooltip">
+    <div class="tooltip-title" id="wfg-tt-title">P1</div>
+    <div class="tooltip-row"><span>Status</span><span class="tooltip-val" id="wfg-tt-status">—</span></div>
+    <div class="tooltip-row"><span>Holds</span><span class="tooltip-val" id="wfg-tt-holds">—</span></div>
+    <div class="tooltip-row"><span>Waiting for</span><span class="tooltip-val" id="wfg-tt-waits">—</span></div>
+    <div class="tooltip-row"><span>In cycle</span><span class="tooltip-val" id="wfg-tt-cycle">No</span></div>
+  </div>
+
+  <!-- Onboarding Overlay -->
+  <div id="onboarding-overlay" class="hidden">
+    <div class="onboarding-card">
+      <h2>Welcome to DeadLock Sim</h2>
+      <p>An interactive simulator for learning about Operating System deadlock detection & recovery.</p>
+      <div class="onboarding-steps">
+        <div class="onboarding-step">
+          <span class="step-badge">1</span>
+          <span>Add <strong>Processes</strong> and <strong>Resources</strong> using the buttons in the panel.</span>
+        </div>
+        <div class="onboarding-step">
+          <span class="step-badge">2</span>
+          <span>Connect them using <strong>Add Link / Edge</strong> to create allocation and request relationships.</span>
+        </div>
+        <div class="onboarding-step">
+          <span class="step-badge">3</span>
+          <span>Run <strong>Detection</strong> to check for deadlocks, or use <strong>Step-Through</strong> to watch the algorithm step by step.</span>
+        </div>
+        <div class="onboarding-step">
+          <span class="step-badge">4</span>
+          <span>Try the <strong>Presets</strong> to see safe and deadlock scenarios instantly!</span>
+        </div>
+      </div>
+      <button class="onboarding-dismiss" id="onboarding-dismiss">Got it, let's go!</button>
+    </div>
+  </div>
+
+  <script type="module" src="src/App.js"></script>
+  <script>
+    // Sidebar resizer
+    const resizer = document.getElementById('resizer');
+    const sidebar = document.getElementById('sidebar');
+    let isResizing = false;
+
+    resizer.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      resizer.classList.add('resizing');
+      document.body.style.cursor = 'col-resize';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+      const width = e.clientX;
+      if (width > 250 && width < 600) {
+        sidebar.style.width = width + 'px';
+        // Trigger resize event for D3
+        window.dispatchEvent(new Event('resize'));
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      isResizing = false;
+      resizer.classList.remove('resizing');
+      document.body.style.cursor = 'default';
+    });
+
+    // Onboarding - show only on first visit
+    (function() {
+      const overlay = document.getElementById('onboarding-overlay');
+      const dismissBtn = document.getElementById('onboarding-dismiss');
+      if (!localStorage.getItem('deadlock-sim-onboarded')) {
+        overlay.classList.remove('hidden');
+      }
+      dismissBtn.addEventListener('click', () => {
+        overlay.classList.add('hidden');
+        localStorage.setItem('deadlock-sim-onboarded', 'true');
+      });
+    })();
+
+    // Theory popover toggle
+    (function() {
+      const toggle = document.getElementById('theory-toggle');
+      const popover = document.getElementById('theory-popover');
+      const close = document.getElementById('theory-close');
+      toggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        popover.classList.toggle('visible');
+      });
+      close.addEventListener('click', () => popover.classList.remove('visible'));
+      document.addEventListener('click', (e) => {
+        if (!popover.contains(e.target) && e.target !== toggle) {
+          popover.classList.remove('visible');
+        }
+      });
+    })();
+
+    // Speed slider
+    (function() {
+      const slider = document.getElementById('speed-slider');
+      const label = document.getElementById('speed-value');
+      const speeds = [0.25, 0.5, 1, 1.5, 2, 3];
+      function updateLabel() {
+        label.textContent = speeds[slider.value - 1] + 'x';
+      }
+      slider.addEventListener('input', updateLabel);
+      updateLabel();
+    })();
+  </script>
+  <script type="module">
+    import { renderHome } from './src/Home.js';
+    import './src/App.js';
+
+    function showHome() {
+      document.getElementById('main-content').style.display = '';
+      document.getElementById('canvas-container').style.display = 'none';
+      document.getElementById('sidebar').style.display = 'none';
+      document.getElementById('resizer').style.display = 'none';
+      document.getElementById('edge-legend').style.display = 'none';
+      document.getElementById('graph-stats').style.display = 'none';
+      document.getElementById('status-badge').style.display = 'none';
+      renderHome('main-content');
+    }
+    function showApp() {
+      document.getElementById('main-content').style.display = 'none';
+      document.getElementById('canvas-container').style.display = '';
+      document.getElementById('sidebar').style.display = '';
+      document.getElementById('resizer').style.display = '';
+      document.getElementById('edge-legend').style.display = '';
+      document.getElementById('graph-stats').style.display = '';
+      document.getElementById('status-badge').style.display = '';
+    }
+
+    // Simple router
+    function route() {
+      if (location.hash === '#/app') {
+        showApp();
+      } else {
+        showHome();
+      }
+    }
+    window.addEventListener('hashchange', route);
+    route();
+
+    // Optionally, add a nav button to go to app
+    window.gotoApp = () => { location.hash = '#/app'; };
+  </script>
+</body>
+</html>
